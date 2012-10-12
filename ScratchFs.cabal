@@ -58,5 +58,7 @@ executable ScratchFs
                        unix >= 2.5,
                        directory >= 1.1,
                        bytestring >= 0.9,
-                       filepath >= 1.2
+                       filepath >= 1.2,
+                       regex-compat >= 0.95,
+                       containers >= 0.4
   
