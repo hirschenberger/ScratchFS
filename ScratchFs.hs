@@ -39,9 +39,10 @@ data Options = Options { maxSize :: Int }
 
 type HistoryMap = IM.IntMap (Integer, FilePath)
 data State = State { history :: HistoryMap
-                    ,size    :: Integer }
+                    ,size    :: Integer
+                    ,opt     :: Options }
 
-newState:: State 
+newState:: Options -> State 
 newState = State IM.empty 0
 
 defaultOptions:: Options
@@ -66,7 +67,7 @@ main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
         case getOpt RequireOrder options args of
             (o, [watchDir, mountDir], []) -> do
                 opts <- foldl (>>=) (return defaultOptions) o
-                state <- newIORef newState
+                state <- newIORef $ newState opts
                 syslog Debug ("Starting ScratchFS from " ++ watchDir ++ " mounted on " ++ mountDir)
                 withArgs ["-f", "-d", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
             (_, _, e)  -> void (putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions)
@@ -170,15 +171,15 @@ scratchOpen :: FilePath -> FilePath -> OpenMode -> OpenFileFlags -> IO (Either E
 scratchOpen r p mode flags = liftM Right (openFd (r <//> p) mode (Just stdFileMode) flags)
 
 scratchRead :: FilePath -> FilePath -> Fd -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
-scratchRead r p fd count off = do
+scratchRead _ _ fd count off = do
     newOff <- fdSeek fd AbsoluteSeek off
     if off /= newOff
         then return (Left eINVAL)
-        else do (content, bytesRead) <- fdRead fd count
+        else do (content, _) <- fdRead fd count
                 return.Right $ B.pack content
 
 scratchWrite :: FilePath -> FilePath -> Fd -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
-scratchWrite r p fd buf off = do
+scratchWrite _ _ fd buf off = do
     newOff <- fdSeek fd AbsoluteSeek off
     if off /= newOff
         then return (Left eINVAL)
@@ -190,12 +191,12 @@ scratchGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 scratchGetFileSystemStats _ = return (Left eOK)
 
 scratchFlush :: FilePath -> Fd -> IO Errno
-scratchFlush p fd = getErrno
+scratchFlush _ _ = getErrno
 
 scratchRelease :: FilePath -> IORef State -> FilePath -> Fd -> IO ()
 scratchRelease r st p fd = do
     fileSz <- fSize
-    modifyIORef st (\st' -> st' {size = size st' + fileSz,
+    modifyIORef st (\st' -> st' {size    = size st' + fileSz,
                                  history = appendHist (history st') fileSz path})
     sz <- readIORef st
     syslog Debug ("History: " ++ show (history sz) ++ "\tSize: " ++ show (size sz))
@@ -204,7 +205,7 @@ scratchRelease r st p fd = do
       path:: FilePath
       path = r <//> p
       fSize:: IO Integer
-      fSize = getSymbolicLinkStatus path >>= return.fromIntegral.fileSize
+      fSize = liftM (fromIntegral.fileSize) (getSymbolicLinkStatus path)
       appendHist:: HistoryMap -> Integer -> FilePath -> HistoryMap
       appendHist h sz p = IM.insert (IM.size h) (sz, p) h
   
