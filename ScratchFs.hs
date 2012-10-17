@@ -37,8 +37,9 @@ import           Utils
 
 data Options = Options { maxSize :: Int }
 
-data State = State { history :: IM.IntMap FilePath
-                    ,size    :: Int }
+type HistoryMap = IM.IntMap (Integer, FilePath)
+data State = State { history :: HistoryMap
+                    ,size    :: Integer }
 
 newState:: State 
 newState = State IM.empty 0
@@ -87,11 +88,11 @@ scratchOps root state = defaultFuseOps {fuseGetFileStat         = scratchGetFile
                                         fuseSetFileSize         = scratchSetFileSize,
                                         fuseSetFileTimes        = scratchSetFileTimes,
                                         fuseOpen                = scratchOpen root,
-                                        fuseWrite               = scratchWrite root state,
+                                        fuseWrite               = scratchWrite root,
                                         fuseRead                = scratchRead root,
                                         fuseGetFileSystemStats  = scratchGetFileSystemStats,
                                         fuseFlush               = scratchFlush,
-                                        fuseRelease             = scratchRelease,
+                                        fuseRelease             = scratchRelease root state,
                                         fuseSynchronizeFile     = scratchSynchronizeFile
                                           }
 
@@ -174,28 +175,39 @@ scratchRead r p fd count off = do
     if off /= newOff
         then return (Left eINVAL)
         else do (content, bytesRead) <- fdRead fd count
-                return (Right $ B.pack content)
+                return.Right $ B.pack content
 
-scratchWrite :: FilePath -> IORef State -> FilePath -> Fd -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
-scratchWrite r st p fd buf off = do
+scratchWrite :: FilePath -> FilePath -> Fd -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
+scratchWrite r p fd buf off = do
     newOff <- fdSeek fd AbsoluteSeek off
     if off /= newOff
         then return (Left eINVAL)
         else do
-            w <- fdWrite fd (B.unpack buf) 
-            modifyIORef st (\st' -> st' {size = size st' + fromIntegral w})
-            nSt <- readIORef st 
-            syslog Debug ("New size: " ++ show (size nSt))
-            return $ Right w
+            fdWrite fd (B.unpack buf)         
+            return.Right $ fromIntegral $ B.length buf
 
 scratchGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 scratchGetFileSystemStats _ = return (Left eOK)
 
 scratchFlush :: FilePath -> Fd -> IO Errno
-scratchFlush _ _ = getErrno
+scratchFlush p fd = getErrno
 
-scratchRelease :: FilePath -> Fd -> IO ()
-scratchRelease _ = closeFd
+scratchRelease :: FilePath -> IORef State -> FilePath -> Fd -> IO ()
+scratchRelease r st p fd = do
+    fileSz <- fSize
+    modifyIORef st (\st' -> st' {size = size st' + fileSz,
+                                 history = appendHist (history st') fileSz path})
+    sz <- readIORef st
+    syslog Debug ("History: " ++ show (history sz) ++ "\tSize: " ++ show (size sz))
+    closeFd fd
+    where
+      path:: FilePath
+      path = r <//> p
+      fSize:: IO Integer
+      fSize = getSymbolicLinkStatus path >>= return.fromIntegral.fileSize
+      appendHist:: HistoryMap -> Integer -> FilePath -> HistoryMap
+      appendHist h sz p = IM.insert (IM.size h) (sz, p) h
+  
 
 scratchSynchronizeFile :: FilePath -> SyncType -> IO Errno
 scratchSynchronizeFile _ _ = getErrno
