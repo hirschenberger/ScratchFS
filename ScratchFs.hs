@@ -68,7 +68,7 @@ main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
                 state <- newIORef newState
                 syslog Debug ("Starting ScratchFS from " ++ watchDir ++ " mounted on " ++ mountDir)
                 withArgs ["-f", "-d", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
-            (_, _, e)  -> putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions >> return ()
+            (_, _, e)  -> void (putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions)
 
 exceptionHandler:: SomeException -> IO Errno
 exceptionHandler e = syslog Error ("Exception: " ++ show e) >> defaultExceptionHandler e
@@ -120,10 +120,10 @@ scratchCreateDevice r p t m d = do
     syslog Debug $ "Create device" ++ (r <//> p)
     let combinedMode = entryTypeToFileMode t `unionFileModes` m
     createDevice (r <//> p) combinedMode d
-    return eOK
+    getErrno
 
 scratchRemoveLink:: FilePath -> FilePath -> IO Errno
-scratchRemoveLink r p = removeLink (r <//> p) >> getErrno >>= return
+scratchRemoveLink r p = removeLink (r <//> p) >> getErrno
 
 scratchGetFileStat:: FilePath -> FilePath -> IO (Either Errno FileStat)
 scratchGetFileStat r s = do
@@ -145,7 +145,7 @@ scratchOpenDirectory:: FilePath -> FilePath -> IO Errno
 scratchOpenDirectory r p = openDirStream (r <//> p) >>= closeDirStream >> getErrno
 
 scratchReadDirectory :: FilePath -> FilePath -> IO (Either Errno [(FilePath, FileStat)])
-scratchReadDirectory r p = getDirectoryContents (r <//> p) >>= mapM pairType >>= return . Right
+scratchReadDirectory r p = liftM Right (getDirectoryContents (r <//> p) >>= mapM pairType)
     where pairType name = do
               status <- getSymbolicLinkStatus (r <//> name)
               return (name, fileStatusToFileStat status)
@@ -166,7 +166,7 @@ scratchSetFileTimes :: FilePath -> EpochTime -> EpochTime -> IO Errno
 scratchSetFileTimes path aTime mTime = setFileTimes path aTime mTime >> getErrno
 
 scratchOpen :: FilePath -> FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno Fd)
-scratchOpen r p mode flags = openFd (r <//> p) mode (Just stdFileMode) flags >>= return.Right
+scratchOpen r p mode flags = liftM Right (openFd (r <//> p) mode (Just stdFileMode) flags)
 
 scratchRead :: FilePath -> FilePath -> Fd -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 scratchRead r p fd count off = do
@@ -183,7 +183,7 @@ scratchWrite r st p fd buf off = do
         then return (Left eINVAL)
         else do
             w <- fdWrite fd (B.unpack buf) 
-            modifyIORef st (\st' -> st' {size = (size st' + fromIntegral w)})
+            modifyIORef st (\st' -> st' {size = size st' + fromIntegral w})
             nSt <- readIORef st 
             syslog Debug ("New size: " ++ show (size nSt))
             return $ Right w
