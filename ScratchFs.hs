@@ -28,7 +28,6 @@ import           System.Console.GetOpt
 import           System.Directory      (getDirectoryContents)
 import           System.Environment
 import           System.Exit
-import           System.FilePath.Posix ((</>))
 import           System.Fuse
 import           System.IO
 import           System.Posix
@@ -54,7 +53,7 @@ options = [ Option "s" ["size"]
           , Option "h"  ["help"] (NoArg (printHelp ExitSuccess)) "Show help message"
           ]
 
-printHelp:: ExitCode -> Options -> IO (Options)
+printHelp:: ExitCode -> Options -> IO Options
 printHelp c _ = do
     prg <- getProgName
     hPutStrLn stderr (usageInfo (prg ++ " [OPTIONS] WATCHDIR MOUNTDIR") options)
@@ -76,6 +75,8 @@ exceptionHandler e = syslog Error ("Exception: " ++ show e) >> defaultExceptionH
 
 scratchOps:: FilePath -> IORef State -> FuseOperations Fd
 scratchOps root state = defaultFuseOps {fuseGetFileStat         = scratchGetFileStat root,
+                                        fuseCreateDevice        = scratchCreateDevice root,
+                                        fuseRemoveLink          = scratchRemoveLink root,
                                         fuseCreateDirectory     = scratchCreateDirectory root,
                                         fuseRemoveDirectory     = scratchRemoveDirectory root ,
                                         fuseOpenDirectory       = scratchOpenDirectory root,
@@ -114,26 +115,34 @@ fileStatusToFileStat status =
 (<//>):: FilePath -> FilePath -> FilePath
 (<//>) a b = normalise (a ++ "/" ++ b)
 
+scratchCreateDevice:: FilePath -> FilePath -> EntryType -> FileMode -> DeviceID -> IO Errno
+scratchCreateDevice r p t m d = do 
+    syslog Debug $ "Create device" ++ (r <//> p)
+    let combinedMode = entryTypeToFileMode t `unionFileModes` m
+    createDevice (r <//> p) combinedMode d
+    return eOK
+
+scratchRemoveLink:: FilePath -> FilePath -> IO Errno
+scratchRemoveLink r p = removeLink (r <//> p) >> getErrno >>= return
+
 scratchGetFileStat:: FilePath -> FilePath -> IO (Either Errno FileStat)
 scratchGetFileStat r s = do
-    exists <- fileExist path
-    if exists
-      then do stat <- getSymbolicLinkStatus path 
+    exist <- fileExist path
+    if exist
+      then do stat <- getSymbolicLinkStatus path
               return $ Right $ fileStatusToFileStat stat
-      else return $ Left eOK
+      else    return $ Left eNOENT
     where
       path = r <//> s
 
-
-
 scratchCreateDirectory:: FilePath -> FilePath -> FileMode -> IO Errno
-scratchCreateDirectory r p m = createDirectory (r <//> p) m >> return eOK
+scratchCreateDirectory r p m = createDirectory (r <//> p) m >> getErrno
 
 scratchRemoveDirectory:: FilePath -> FilePath -> IO Errno
-scratchRemoveDirectory r p = removeDirectory (r <//> p) >> return eOK
+scratchRemoveDirectory r p = removeDirectory (r <//> p) >> getErrno
 
 scratchOpenDirectory:: FilePath -> FilePath -> IO Errno
-scratchOpenDirectory r p = openDirStream (r <//> p) >>= closeDirStream >> return eOK
+scratchOpenDirectory r p = openDirStream (r <//> p) >>= closeDirStream >> getErrno
 
 scratchReadDirectory :: FilePath -> FilePath -> IO (Either Errno [(FilePath, FileStat)])
 scratchReadDirectory r p = getDirectoryContents (r <//> p) >>= mapM pairType >>= return . Right
@@ -142,19 +151,19 @@ scratchReadDirectory r p = getDirectoryContents (r <//> p) >>= mapM pairType >>=
               return (name, fileStatusToFileStat status)
 
 scratchRename :: FilePath -> FilePath -> IO Errno
-scratchRename src dest = syslog Debug ("Rename: " ++ src ++ " -> " ++ dest) >> rename src dest >> return eOK
+scratchRename src dest = rename src dest >> getErrno
 
 scratchSetFileMode :: FilePath -> FileMode -> IO Errno
-scratchSetFileMode path mode = setFileMode path mode >> return eOK
+scratchSetFileMode path mode = setFileMode path mode >> getErrno
 
 scratchSetOwnerAndGroup :: FilePath -> UserID -> GroupID -> IO Errno
-scratchSetOwnerAndGroup path uid gid = setOwnerAndGroup path uid gid  >> return eOK
+scratchSetOwnerAndGroup path uid gid = setOwnerAndGroup path uid gid  >> getErrno
 
 scratchSetFileSize :: FilePath -> FileOffset -> IO Errno
-scratchSetFileSize path off = setFileSize path off >> return eOK
+scratchSetFileSize path off = setFileSize path off >> getErrno
 
 scratchSetFileTimes :: FilePath -> EpochTime -> EpochTime -> IO Errno
-scratchSetFileTimes path aTime mTime = setFileTimes path aTime mTime >> return eOK
+scratchSetFileTimes path aTime mTime = setFileTimes path aTime mTime >> getErrno
 
 scratchOpen :: FilePath -> FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno Fd)
 scratchOpen r p mode flags = openFd (r <//> p) mode (Just stdFileMode) flags >>= return.Right
@@ -183,10 +192,10 @@ scratchGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 scratchGetFileSystemStats _ = return (Left eOK)
 
 scratchFlush :: FilePath -> Fd -> IO Errno
-scratchFlush _ _ = return eOK
+scratchFlush _ _ = getErrno
 
 scratchRelease :: FilePath -> Fd -> IO ()
 scratchRelease _ = closeFd
 
 scratchSynchronizeFile :: FilePath -> SyncType -> IO Errno
-scratchSynchronizeFile _ _ = return eOK
+scratchSynchronizeFile _ _ = getErrno
