@@ -33,6 +33,7 @@ import           System.Fuse
 import           System.IO
 import           System.Posix
 import           System.Posix.Syslog
+import           System.FilePath.Posix
 import           Utils
 
 data Options = Options { maxSize :: Int }
@@ -67,7 +68,7 @@ main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
                 opts <- foldl (>>=) (return defaultOptions) o
                 state <- newIORef newState
                 syslog Debug ("Starting ScratchFS from " ++ watchDir ++ " mounted on " ++ mountDir)
-                withArgs ["-f", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
+                withArgs ["-f", "-d", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
             (_, _, e)  -> putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions >> return ()
 
 exceptionHandler:: SomeException -> IO Errno
@@ -110,29 +111,38 @@ fileStatusToFileStat status =
              , statStatusChangeTime = statusChangeTime status
              }
 
+(<//>):: FilePath -> FilePath -> FilePath
+(<//>) a b = normalise (a ++ "/" ++ b)
+
 scratchGetFileStat:: FilePath -> FilePath -> IO (Either Errno FileStat)
 scratchGetFileStat r s = do
-    stat <- getSymbolicLinkStatus (r ++ "/" ++ s)
-    return $ Right $ fileStatusToFileStat stat
+    exists <- fileExist path
+    if exists
+      then do stat <- getSymbolicLinkStatus path 
+              return $ Right $ fileStatusToFileStat stat
+      else return $ Left eOK
+    where
+      path = r <//> s
+
 
 
 scratchCreateDirectory:: FilePath -> FilePath -> FileMode -> IO Errno
-scratchCreateDirectory r p m = createDirectory (r ++ "/" ++ p) m >> return eOK
+scratchCreateDirectory r p m = createDirectory (r <//> p) m >> return eOK
 
 scratchRemoveDirectory:: FilePath -> FilePath -> IO Errno
-scratchRemoveDirectory r p = removeDirectory (r ++ "/" ++ p) >> return eOK
+scratchRemoveDirectory r p = removeDirectory (r <//> p) >> return eOK
 
 scratchOpenDirectory:: FilePath -> FilePath -> IO Errno
-scratchOpenDirectory r p = openDirStream (r ++ "/" ++ p) >>= closeDirStream >> return eOK
+scratchOpenDirectory r p = openDirStream (r <//> p) >>= closeDirStream >> return eOK
 
 scratchReadDirectory :: FilePath -> FilePath -> IO (Either Errno [(FilePath, FileStat)])
-scratchReadDirectory r p = getDirectoryContents (r ++ "/" ++ p) >>= mapM pairType >>= return . Right
+scratchReadDirectory r p = getDirectoryContents (r <//> p) >>= mapM pairType >>= return . Right
     where pairType name = do
-              status <- getSymbolicLinkStatus (r ++ "/" ++ name)
+              status <- getSymbolicLinkStatus (r <//> name)
               return (name, fileStatusToFileStat status)
 
 scratchRename :: FilePath -> FilePath -> IO Errno
-scratchRename src dest = rename src dest >> return eOK
+scratchRename src dest = syslog Debug ("Rename: " ++ src ++ " -> " ++ dest) >> rename src dest >> return eOK
 
 scratchSetFileMode :: FilePath -> FileMode -> IO Errno
 scratchSetFileMode path mode = setFileMode path mode >> return eOK
@@ -147,7 +157,7 @@ scratchSetFileTimes :: FilePath -> EpochTime -> EpochTime -> IO Errno
 scratchSetFileTimes path aTime mTime = setFileTimes path aTime mTime >> return eOK
 
 scratchOpen :: FilePath -> FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno Fd)
-scratchOpen r p mode flags = openFd (r ++ "/" ++ p) mode Nothing flags >>= return.Right
+scratchOpen r p mode flags = openFd (r <//> p) mode (Just stdFileMode) flags >>= return.Right
 
 scratchRead :: FilePath -> FilePath -> Fd -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 scratchRead r p fd count off = do
