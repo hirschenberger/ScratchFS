@@ -57,12 +57,13 @@ options = [ Option "s" ["size"]
 printHelp:: ExitCode -> Options -> IO Options
 printHelp c _ = do
     prg <- getProgName
-    hPutStrLn stderr (usageInfo (prg ++ " [OPTIONS] WATCHDIR MOUNTDIR") options)
+    hPutStrLn stderr (usageInfo (prg ++ " {-s|--size} SIZE WATCHDIR MOUNTDIR") options)
     exitWith c
 
 main:: IO ()
 main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
         args <- getArgs
+        when (length args /= 4) $ void $ printHelp (ExitFailure 1) defaultOptions
         case getOpt RequireOrder options args of
             (o, [watchDir, mountDir], []) -> do
                 opts    <- foldl (>>=) (return defaultOptions) o
