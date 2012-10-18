@@ -21,9 +21,9 @@ module Main where
 import           Control.Exception
 import           Control.Monad
 import qualified Data.ByteString.Char8 as B
-import qualified Data.IntMap           as IM
 import           Data.Maybe
 import           Data.IORef
+import           Text.Printf
 import           System.Console.GetOpt
 import           System.Directory      (getDirectoryContents)
 import           System.Environment
@@ -33,19 +33,15 @@ import           System.IO
 import           System.Posix
 import           System.Posix.Syslog
 import           System.FilePath.Posix
+
 import           Utils
+import           HistoryDb
 
 data Options = Options { maxSize :: Integer }
 
-type HistoryMap = IM.IntMap (Integer, FilePath)
-data State = State { history :: HistoryMap
+data State = State { dbConn  :: Connection
                     ,size    :: Integer
                     ,opts    :: Options }
-
-newState:: Options -> State 
-newState o = State { history = IM.empty
-                    ,size    = 0
-                    ,opts    = o }
 
 defaultOptions:: Options
 defaultOptions = Options { maxSize = 0 }
@@ -69,9 +65,11 @@ main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
         case getOpt RequireOrder options args of
             (o, [watchDir, mountDir], []) -> do
                 popts <- foldl (>>=) (return defaultOptions) o
-                state <- newIORef $ newState popts
+                db    <- historyDb watchDir
+                sz    <- sizeOfDbFiles db
+                state <- newIORef $ State{ dbConn=db, size=sz, opts=popts}
                 syslog Debug ("Starting ScratchFS from " ++ watchDir ++ " mounted on " ++ mountDir)
-                withArgs ["-f", "-d", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
+                withArgs ["-f", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
             (_, _, e)  -> void (putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions)
 
 exceptionHandler:: SomeException -> IO Errno
@@ -110,7 +108,7 @@ fileStatusToFileStat status =
              , statSpecialDeviceID  = specialDeviceID status
              , statFileSize         = fileSize status
              -- fixme: 1024 is not always the size of a block
-             , statBlocks           = fromIntegral (fileSize status `div` 1024)
+             , statBlocks           = fromIntegral (fileSize status `div` 512)
              , statAccessTime       = accessTime status
              , statModificationTime = modificationTime status
              , statStatusChangeTime = statusChangeTime status
@@ -121,7 +119,7 @@ fileStatusToFileStat status =
 
 scratchCreateDevice:: FilePath -> FilePath -> EntryType -> FileMode -> DeviceID -> IO Errno
 scratchCreateDevice r p t m d = do 
-    syslog Debug $ "Create device" ++ (r <//> p)
+    syslog Debug $ "Create device: " ++ (r <//> p)
     let combinedMode = entryTypeToFileMode t `unionFileModes` m
     createDevice (r <//> p) combinedMode d
     getErrno
@@ -196,24 +194,25 @@ scratchFlush :: FilePath -> Fd -> IO Errno
 scratchFlush _ _ = getErrno
 
 scratchRelease :: FilePath -> IORef State -> FilePath -> Fd -> IO ()
-scratchRelease r st p fd = do
-    fileSz <- fSize
-    modifyIORef st (\st' -> st' {size    = size st' + fileSz,
-                                 history = appendHist (history st') fileSz path})
-    sz <- readIORef st
-    syslog Debug ("History: " ++ show (history sz) ++ "\tSize: " ++ show (size sz))
-    if size sz > (maxSize.opts) sz
-      then undefined
-      else undefined
+scratchRelease r stRef p fd = do
+    state <- readIORef stRef
+    (_, fileSz) <- addFile (dbConn state) path
+    state2 <- maybeCleanUp state{size = size state + fileSz}
+    writeIORef stRef state2
     closeFd fd
     where
       path:: FilePath
       path = r <//> p
-      fSize:: IO Integer
-      fSize = liftM (fromIntegral.fileSize) (getSymbolicLinkStatus path)
-      appendHist:: HistoryMap -> Integer -> FilePath -> HistoryMap
-      appendHist h sz p = IM.insert (IM.size h) (sz, p) h
-  
+      mustClean:: State -> Bool
+      mustClean st = size st > (maxSize.opts) st
+      maybeCleanUp:: State -> IO (State)
+      maybeCleanUp st
+          | mustClean st = do
+                            syslog Debug (printf "Cleanup, size: %d" (size st))
+                            sd <- deleteOldestFile (dbConn st)
+                            maybeCleanUp st {size = size st - sd}
+          | otherwise    =  return st                             
+
 
 scratchSynchronizeFile :: FilePath -> SyncType -> IO Errno
 scratchSynchronizeFile _ _ = getErrno
