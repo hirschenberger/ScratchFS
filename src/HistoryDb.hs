@@ -92,7 +92,7 @@ deleteOldestFile conn = do
     rep <- query_ conn "SELECT * FROM scratchfs ORDER BY time LIMIT 1" :: IO [HistoryField]
     case rep of
         []                                 -> return 0
-        (HistoryField key  _  sz  path):_  -> delFile path >> delKey key >> return sz
+        HistoryField key  _  sz  path : _  -> delFile path >> delKey key >> return sz
     where
       delFile:: FilePath -> IO ()
       delFile p = removeFile p `CE.catch` (\(e :: CE.SomeException) -> 
@@ -109,5 +109,5 @@ sizeOfDbFiles:: Connection -- ^ The open database connection
 sizeOfDbFiles conn = do
     res <- query_ conn "SELECT sum(size) FROM scratchfs"
     case res of
-      [(Only (Just size))] -> return size
-      otherwise     -> return 0
+      [Only (Just size)]  -> return size
+      otherwise           -> return 0

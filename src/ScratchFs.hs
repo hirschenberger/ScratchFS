@@ -68,7 +68,7 @@ main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
                 opts    <- foldl (>>=) (return defaultOptions) o
                 dbConn  <- historyDb watchDir
                 size    <- sizeOfDbFiles dbConn
-                state   <- newIORef $ State{ dbConn, size, opts}
+                state   <- newIORef State{ dbConn, size, opts}
                 syslog Debug ("Starting ScratchFS from " ++ watchDir ++ " mounted on " ++ mountDir)
                 withArgs ["-f", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
             (_, _, e)  -> void (putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions)
@@ -205,7 +205,7 @@ scratchRelease r stRef p fd = do
       path = r <//> p
       mustClean:: State -> Bool
       mustClean State{opts, size} = size  > maxSize opts
-      maybeCleanUp:: State -> IO (State)
+      maybeCleanUp:: State -> IO State
       maybeCleanUp st@State{size, dbConn}
           | mustClean st = do
                             syslog Debug (printf "Cleanup, size: %d" size)
