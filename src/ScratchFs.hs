@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns #-}
 {-
   ScratchFs is a size limited temp filesystem based on fuse
   Copyright (C) 2012  Falco Hirschenberger <hirsch@bogfoot.de>
@@ -64,10 +65,10 @@ main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
         args <- getArgs
         case getOpt RequireOrder options args of
             (o, [watchDir, mountDir], []) -> do
-                popts <- foldl (>>=) (return defaultOptions) o
-                db    <- historyDb watchDir
-                sz    <- sizeOfDbFiles db
-                state <- newIORef $ State{ dbConn=db, size=sz, opts=popts}
+                opts    <- foldl (>>=) (return defaultOptions) o
+                dbConn  <- historyDb watchDir
+                size    <- sizeOfDbFiles dbConn
+                state   <- newIORef $ State{ dbConn, size, opts}
                 syslog Debug ("Starting ScratchFS from " ++ watchDir ++ " mounted on " ++ mountDir)
                 withArgs ["-f", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
             (_, _, e)  -> void (putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions)
@@ -95,7 +96,7 @@ scratchOps root state = defaultFuseOps {fuseGetFileStat         = scratchGetFile
                                         fuseFlush               = scratchFlush,
                                         fuseRelease             = scratchRelease root state,
                                         fuseSynchronizeFile     = scratchSynchronizeFile
-                                          }
+                                        }
 
 
 fileStatusToFileStat :: FileStatus -> FileStat
@@ -195,22 +196,21 @@ scratchFlush _ _ = getErrno
 
 scratchRelease :: FilePath -> IORef State -> FilePath -> Fd -> IO ()
 scratchRelease r stRef p fd = do
-    state <- readIORef stRef
-    (_, fileSz) <- addFile (dbConn state) path
-    state2 <- maybeCleanUp state{size = size state + fileSz}
-    writeIORef stRef state2
+    state@State{dbConn, size} <- readIORef stRef
+    (_, fileSz) <- addFile dbConn path
+    maybeCleanUp state{size = size + fileSz} >>= writeIORef stRef 
     closeFd fd
     where
       path:: FilePath
       path = r <//> p
       mustClean:: State -> Bool
-      mustClean st = size st > (maxSize.opts) st
+      mustClean State{opts, size} = size  > maxSize opts
       maybeCleanUp:: State -> IO (State)
-      maybeCleanUp st
+      maybeCleanUp st@State{size, dbConn}
           | mustClean st = do
-                            syslog Debug (printf "Cleanup, size: %d" (size st))
-                            sd <- deleteOldestFile (dbConn st)
-                            maybeCleanUp st {size = size st - sd}
+                            syslog Debug (printf "Cleanup, size: %d" size)
+                            sd <- deleteOldestFile dbConn
+                            maybeCleanUp st {size = size - sd}
           | otherwise    =  return st                             
 
 
