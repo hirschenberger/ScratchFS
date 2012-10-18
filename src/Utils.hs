@@ -29,13 +29,13 @@ import qualified Text.Regex as TR
 
         * /TB/ for terabytes
 -}
-parseSize :: String     -- ^ The string to parse
-          -> Maybe Int  -- ^ The size multiplied with the unit-factor
+parseSize :: String         -- ^ The string to parse
+          -> Maybe Integer  -- ^ The size multiplied with the unit-factor
 parseSize s = case TR.matchRegex (TR.mkRegex "([0-9]+)[ ]*(MB|GB|TB)?") s of
-                Just [num, ""]   -> Just   (read num ::Int)
-                Just [num, "MB"] -> Just $ (read num ::Int) * 1024
-                Just [num, "GB"] -> Just $ (read num ::Int) * 1024 * 1024
-                Just [num, "TB"] -> Just $ (read num ::Int) * 1024 * 1024 * 1024
+                Just [num, ""]   -> Just   (read num ::Integer)
+                Just [num, "MB"] -> Just $ (read num ::Integer) * 1024
+                Just [num, "GB"] -> Just $ (read num ::Integer) * 1024 * 1024
+                Just [num, "TB"] -> Just $ (read num ::Integer) * 1024 * 1024 * 1024
                 _ -> Nothing
 
 

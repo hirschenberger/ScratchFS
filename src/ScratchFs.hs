@@ -35,18 +35,20 @@ import           System.Posix.Syslog
 import           System.FilePath.Posix
 import           Utils
 
-data Options = Options { maxSize :: Int }
+data Options = Options { maxSize :: Integer }
 
 type HistoryMap = IM.IntMap (Integer, FilePath)
 data State = State { history :: HistoryMap
                     ,size    :: Integer
-                    ,opt     :: Options }
+                    ,opts    :: Options }
 
 newState:: Options -> State 
-newState = State IM.empty 0
+newState o = State { history = IM.empty
+                    ,size    = 0
+                    ,opts    = o }
 
 defaultOptions:: Options
-defaultOptions = Options 0
+defaultOptions = Options { maxSize = 0 }
 
 options:: [OptDescr (Options -> IO Options)]
 options = [ Option "s" ["size"]
@@ -66,8 +68,8 @@ main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
         args <- getArgs
         case getOpt RequireOrder options args of
             (o, [watchDir, mountDir], []) -> do
-                opts <- foldl (>>=) (return defaultOptions) o
-                state <- newIORef $ newState opts
+                popts <- foldl (>>=) (return defaultOptions) o
+                state <- newIORef $ newState popts
                 syslog Debug ("Starting ScratchFS from " ++ watchDir ++ " mounted on " ++ mountDir)
                 withArgs ["-f", "-d", mountDir] $ fuseMain (scratchOps watchDir state) exceptionHandler
             (_, _, e)  -> void (putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions)
@@ -184,7 +186,7 @@ scratchWrite _ _ fd buf off = do
     if off /= newOff
         then return (Left eINVAL)
         else do
-            fdWrite fd (B.unpack buf)         
+            _ <- fdWrite fd (B.unpack buf)         
             return.Right $ fromIntegral $ B.length buf
 
 scratchGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
@@ -200,6 +202,9 @@ scratchRelease r st p fd = do
                                  history = appendHist (history st') fileSz path})
     sz <- readIORef st
     syslog Debug ("History: " ++ show (history sz) ++ "\tSize: " ++ show (size sz))
+    if size sz > (maxSize.opts) sz
+      then undefined
+      else undefined
     closeFd fd
     where
       path:: FilePath

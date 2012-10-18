@@ -43,13 +43,15 @@ cabal-version:       >=1.8
 
 
 executable ScratchFs
+  hs-source-dirs: src
   -- .hs or .lhs file containing the Main module.
   main-is: ScratchFs.hs            
   
   -- Modules included in this executable, other than Main.
-  -- other-modules:       
+  other-modules: Utils,
+                 HistoryDb
   
-  ghc-options: -W -O2 -threaded
+  ghc-options: -Wall -O2 -threaded
 
   -- Other library packages from which modules are imported.
   build-depends:       base ==4.5.*,
