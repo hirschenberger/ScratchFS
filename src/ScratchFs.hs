@@ -186,11 +186,12 @@ scratchWrite _ _ fd buf off = do
     if off /= newOff
         then return (Left eINVAL)
         else do
-            _ <- fdWrite fd (B.unpack buf)         
+            s <- fdWrite fd (B.unpack buf)         
+            syslog Debug (printf "Wrote: %d of %d" (fromEnum s) (B.length buf))
             return.Right $ fromIntegral $ B.length buf
 
 scratchGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
-scratchGetFileSystemStats _ = return (Left eOK)
+scratchGetFileSystemStats _ = return $ Left eOK
 
 scratchFlush :: FilePath -> Fd -> IO Errno
 scratchFlush _ _ = getErrno
