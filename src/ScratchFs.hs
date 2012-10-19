@@ -174,21 +174,28 @@ scratchOpen r p mode flags = liftM Right (openFd (r <//> p) mode (Just stdFileMo
 
 scratchRead :: FilePath -> FilePath -> Fd -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 scratchRead _ _ fd count off = do
-    newOff <- fdSeek fd AbsoluteSeek off
-    if off /= newOff
-        then return (Left eINVAL)
-        else do (content, _) <- fdRead fd count
-                return.Right $ B.pack content
+    -- Some stupid Fd -> Handle conversion is done here because the fd-based IO operations
+    -- perform some encoding-magic on the data which we don't need here. We need plain binary
+    -- date writes
+    hd <- fdToHandle fd
+    hSetBinaryMode hd True
+    hSeek hd AbsoluteSeek $ fromIntegral off
+    bs <- B.hGet hd $ fromIntegral count
+    _ <- handleToFd hd   -- Vital to free the handle after the operation
+    return.Right $ bs
 
 scratchWrite :: FilePath -> FilePath -> Fd -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
 scratchWrite _ _ fd buf off = do
-    newOff <- fdSeek fd AbsoluteSeek off
-    if off /= newOff
-        then return (Left eINVAL)
-        else do
-            s <- fdWrite fd (B.unpack buf)         
-            syslog Debug (printf "Wrote: %d of %d" (fromEnum s) (B.length buf))
-            return.Right $ fromIntegral $ B.length buf
+    -- Some stupid Fd -> Handle conversion is done here because the fd-based IO operations
+    -- perform some encoding-magic on the data which we don't need here. We need plain binary
+    -- date writes
+    hd <- fdToHandle fd
+    hSetBinaryMode hd True
+    hSeek hd AbsoluteSeek $ fromIntegral off
+    B.hPut hd buf
+    _ <- handleToFd hd   -- Vital to free the handle after the operation
+    return.Right $ fromIntegral $ B.length buf
+
 
 scratchGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 scratchGetFileSystemStats _ = return $ Left eOK
