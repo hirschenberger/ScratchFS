@@ -24,7 +24,6 @@ module HistoryDb (historyDb,
                   Connection,
                   HistoryField) where
 
-import Data.Maybe
 import System.Process
 import System.FilePath.Posix
 import System.Posix
@@ -110,4 +109,4 @@ sizeOfDbFiles conn = do
     res <- query_ conn "SELECT sum(size) FROM scratchfs"
     case res of
       [Only (Just size)]  -> return size
-      otherwise           -> return 0
+      _                   -> return 0
