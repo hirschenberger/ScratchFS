@@ -28,7 +28,6 @@ import System.Process
 import System.FilePath.Posix
 import System.Posix
 import System.Directory
-import System.Posix.Syslog
 import Control.Monad
 import Control.Applicative
 import qualified Control.Exception as CE
@@ -94,8 +93,7 @@ deleteOldestFile conn = do
         HistoryField key  _  sz  path : _  -> delFile path >> delKey key >> return sz
     where
       delFile:: FilePath -> IO ()
-      delFile p = removeFile p `CE.catch` (\(e :: CE.SomeException) -> 
-                            syslog Debug ("Delete file: " ++ p ++ " exception: " ++ show e))
+      delFile p = removeFile p `CE.catch` (\(_ :: CE.SomeException)-> return ())                             
       delKey:: Int -> IO ()                  
       delKey k  = execute conn "DELETE FROM scratchfs WHERE id IS ?" (Only k)
 
