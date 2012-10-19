@@ -20,7 +20,7 @@ module Utils (parseSize) where
 
 import qualified Text.Regex as TR
 
-{-| Parse a string defining a file size. The base unit is kilobytes.
+{-| Parse a string defining a file size in bytes. The base unit is kilobytes.
     Allowed units are:
 
         * /MB/ for megabytes
@@ -32,10 +32,10 @@ import qualified Text.Regex as TR
 parseSize :: String         -- ^ The string to parse
           -> Maybe Integer  -- ^ The size multiplied with the unit-factor
 parseSize s = case TR.matchRegex (TR.mkRegex "([0-9]+)[ ]*(MB|GB|TB)?") s of
-                Just [num, ""]   -> Just   (read num ::Integer)
-                Just [num, "MB"] -> Just $ (read num ::Integer) * 1024
-                Just [num, "GB"] -> Just $ (read num ::Integer) * 1024 * 1024
-                Just [num, "TB"] -> Just $ (read num ::Integer) * 1024 * 1024 * 1024
+                Just [num, ""]   -> Just $ (read num ::Integer) * 1024
+                Just [num, "MB"] -> Just $ (read num ::Integer) * 1024^(2::Integer)
+                Just [num, "GB"] -> Just $ (read num ::Integer) * 1024^(3::Integer)
+                Just [num, "TB"] -> Just $ (read num ::Integer) * 1024^(4::Integer)
                 _ -> Nothing
 
 
