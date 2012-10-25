@@ -10,7 +10,8 @@ deleted automatically.
     ScratchFs {-s|--size} SIZE WATCHDIR MOUNTDIR
      -s SIZE  --size=SIZE  The maximum size in kilobytes (allowed extensions: MB, GB, TB)
      -h       --help       Show help message
-
+     
+[![Build Status](https://secure.travis-ci.org/hirschenberger/ScratchFS.png)](http://travis-ci.org/hirschenberger/ScratchFS)
 
 ## **CAUTION**
 
