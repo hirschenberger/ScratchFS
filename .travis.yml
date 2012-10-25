@@ -1,4 +1,7 @@
-language: haskell
+language: haskellbefore_install:
+    - sudo apt-get update -qq
+    - sudo apt-get install -qq libfuse-dev
+
 install:
-  - cabal update
-  - cabal install
+    - cabal update
+    - cabal install
