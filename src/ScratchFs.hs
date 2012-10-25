@@ -200,7 +200,7 @@ scratchRelease r State{dbConn, opts, qsem} p fd = do
     maybeCleanUp newSz
     closeFd fd
     stop <- getCPUTime
-    let diff = (fromIntegral (stop - start)) / (10^(12::Integer))
+    let diff = fromIntegral (stop - start) / (10^(12::Integer))
     traceIO $ printf "Time: %0.3f sec" (diff :: Double)
     signalQSem qsem
     where
