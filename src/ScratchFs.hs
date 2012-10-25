@@ -176,28 +176,13 @@ scratchOpen r p mode flags = liftM Right (openFd (r <//> p) mode (Just stdFileMo
 
 scratchRead :: FilePath -> FilePath -> Fd -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 scratchRead _ _ fd count off = do
-    -- Some stupid Fd -> Handle conversion is done here because the fd-based IO operations
-    -- perform some encoding-magic on the data which we don't need here. We need plain binary
-    -- date writes
-    hd <- fdToHandle fd
-    hSetBinaryMode hd True
-    hSeek hd AbsoluteSeek $ fromIntegral off
-    bs <- B.hGet hd $ fromIntegral count
-    _ <- handleToFd hd   -- Vital to free the handle after the operation
+    bs <- withBinaryHandle B.hGet fd (fromIntegral count) off
     return.Right $ bs
 
 scratchWrite :: FilePath -> FilePath -> Fd -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
 scratchWrite _ _ fd buf off = do
-    -- Some stupid Fd -> Handle conversion is done here because the fd-based IO operations
-    -- perform some encoding-magic on the data which we don't need here. We need plain binary
-    -- date writes
-    hd <- fdToHandle fd
-    hSetBinaryMode hd True
-    hSeek hd AbsoluteSeek $ fromIntegral off
-    B.hPut hd buf
-    _ <- handleToFd hd   -- Vital to free the handle after the operation
+    withBinaryHandle B.hPut fd buf off
     return.Right $ fromIntegral $ B.length buf
-
 
 scratchGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 scratchGetFileSystemStats _ = return $ Left eOK
@@ -232,3 +217,14 @@ scratchRelease r State{dbConn, opts, qsem} p fd = do
 
 scratchSynchronizeFile :: FilePath -> SyncType -> IO Errno
 scratchSynchronizeFile _ _ = getErrno
+
+-- Some stupid Fd -> Handle conversion is done here because the fd-based IO operations
+-- perform some encoding-magic on the data which we don't need here. We need plain binary
+-- date writes
+withBinaryHandle:: (Handle -> a -> IO b) -> Fd -> a -> FileOffset -> IO b
+withBinaryHandle f fd a fo = do
+    hd <- fdToHandle fd
+    hSeek hd AbsoluteSeek $ fromIntegral fo
+    res <- f hd a
+    _ <- handleToFd hd
+    return res
