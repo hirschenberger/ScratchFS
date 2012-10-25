@@ -22,6 +22,7 @@ module Main where
 import           Debug.Trace
 import           Control.Exception
 import           Control.Monad
+import           Control.Concurrent.QSem
 import qualified Data.ByteString.Char8 as B
 import           Data.Maybe
 import           Text.Printf
@@ -42,7 +43,8 @@ import           HistoryDb
 data Options = Options { maxSize :: Integer }
 
 data State = State { dbConn  :: Connection
-                    ,opts    :: Options }
+                    ,opts    :: Options
+                    ,qsem    :: QSem }
 
 defaultOptions:: Options
 defaultOptions = Options { maxSize = 0 }
@@ -68,9 +70,10 @@ main = withSyslog "ScratchFS" [PID, PERROR] USER $ do
             (o, [watchDir, mountDir], []) -> do
                 opts    <- foldl (>>=) (return defaultOptions) o
                 dbConn  <- historyDb watchDir
+                qsem <- newQSem 1
                 syslog Debug ("Starting ScratchFS from " ++ watchDir ++ " mounted on " ++ mountDir)
                 withArgs ["-f", mountDir] $ 
-                      fuseMain (scratchOps watchDir State{ dbConn, opts}) exceptionHandler
+                      fuseMain (scratchOps watchDir State{ dbConn, opts, qsem }) exceptionHandler
             (_, _, e)  -> void (putStrLn (concat e) >> printHelp (ExitFailure 1) defaultOptions)
 
 exceptionHandler:: SomeException -> IO Errno
@@ -202,8 +205,10 @@ scratchGetFileSystemStats _ = return $ Left eOK
 scratchFlush :: FilePath -> Fd -> IO Errno
 scratchFlush _ _ = getErrno
 
+-- protect the cleanup function with a semaphore to avoid concurrent access to the database
 scratchRelease :: FilePath -> State -> FilePath -> Fd -> IO ()
-scratchRelease r State{dbConn, opts} p fd = do    
+scratchRelease r State{dbConn, opts, qsem} p fd = do    
+    waitQSem qsem
     start <- getCPUTime
     _ <- addFile dbConn path
     newSz <- sizeOfDbFiles dbConn
@@ -212,6 +217,7 @@ scratchRelease r State{dbConn, opts} p fd = do
     stop <- getCPUTime
     let diff = (fromIntegral (stop - start)) / (10^(12::Integer))
     traceIO $ printf "Time: %0.3f sec" (diff :: Double)
+    signalQSem qsem
     where
       path:: FilePath
       path = r <//> p
@@ -220,7 +226,7 @@ scratchRelease r State{dbConn, opts} p fd = do
           | size > maxSize opts = do
                                   traceIO (printf "Cleanup, size: %d" size)
                                   sd <- deleteOldestFile dbConn
-                                  maybeCleanUp $ size - sd
+                                  maybeCleanUp (size - sd)
           | otherwise           = return ()                             
 
 
