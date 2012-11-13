@@ -24,7 +24,6 @@ module HistoryDb (historyDb,
                   Connection,
                   HistoryField) where
 
-import System.Process
 import System.FilePath.Posix
 import System.Posix
 import System.Directory
@@ -45,11 +44,6 @@ instance FromRow HistoryField where
 dbFileName:: String
 dbFileName = "scratchfs.db"
 
-createDbArgs:: [String]
-createDbArgs = [dbFileName, 
-                "CREATE TABLE IF NOT EXISTS scratchfs \
-                \(id INTEGER PRIMARY KEY, \
-                \time INTEGER, size INTEGER, path TEXT);"]
 
 {-|
   Create the history database in the root-path of the filesystem if it does not exist already.
@@ -60,10 +54,13 @@ createDbArgs = [dbFileName,
 -}
 historyDb:: FilePath        -- ^ Path to the base directory of the filesystem.
          -> IO Connection   -- ^ The open database connection
-historyDb path =
-    runProcess "sqlite3" createDbArgs (Just path) Nothing Nothing Nothing Nothing >>= 
-    waitForProcess >>
-    open (path </> dbFileName)
+historyDb path = do
+    conn <- open (path </> dbFileName)
+    execute_  conn "CREATE TABLE IF NOT EXISTS scratchfs \
+                   \(id INTEGER PRIMARY KEY, \
+                   \time INTEGER, size INTEGER, path TEXT);"
+    return conn
+
 
 {-|
   Insert a file to the database, the size and time gets added automatically to the database.
