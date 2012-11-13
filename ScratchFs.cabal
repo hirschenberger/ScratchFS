@@ -1,5 +1,5 @@
 name:                ScratchFs
-version:             0.1.0.1
+version:             0.1.0.2
 synopsis:            Size limited temp filesystem based on fuse
 
 description:         ScratchFS is a FUSE-based filesystem which provides a size-limited directory tree. 
