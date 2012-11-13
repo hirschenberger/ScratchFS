@@ -1,6 +1,6 @@
 {-
   ScratchFs is a size limited temp filesystem based on fuse
-  Copyright (C) 2011  Falco Hirschenberger <hirsch@bogfoot.de>
+  Copyright (C) 2011  Falco Hirschenberger <hirsch@bigfoot.de>
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
