@@ -31,7 +31,7 @@ executable ScratchFs
   
   ghc-options: -Wall -threaded
 
-  build-depends:       base ==4.5.*,
+  build-depends:       base <5,
                        HFuse >=0.2.4,
                        hsyslog >= 1.4,
                        unix >= 2.5,
