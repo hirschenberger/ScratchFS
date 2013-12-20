@@ -87,11 +87,11 @@ scratchOps root state = defaultFuseOps {fuseGetFileStat         = scratchGetFile
                                         fuseRemoveDirectory     = scratchRemoveDirectory root ,
                                         fuseOpenDirectory       = scratchOpenDirectory root,
                                         fuseReadDirectory       = scratchReadDirectory root,
-                                        fuseRename              = scratchRename,
-                                        fuseSetFileMode         = scratchSetFileMode,
-                                        fuseSetOwnerAndGroup    = scratchSetOwnerAndGroup,
-                                        fuseSetFileSize         = scratchSetFileSize,
-                                        fuseSetFileTimes        = scratchSetFileTimes,
+                                        fuseRename              = scratchRename root,
+                                        fuseSetFileMode         = scratchSetFileMode root,
+                                        fuseSetOwnerAndGroup    = scratchSetOwnerAndGroup root,
+                                        fuseSetFileSize         = scratchSetFileSize root,
+                                        fuseSetFileTimes        = scratchSetFileTimes root,
                                         fuseOpen                = scratchOpen root,
                                         fuseWrite               = scratchWrite root,
                                         fuseRead                = scratchRead root,
@@ -156,20 +156,20 @@ scratchReadDirectory r p = liftM Right (getDirectoryContents (r <//> p) >>= mapM
               status <- getSymbolicLinkStatus (r <//> name)
               return (name, fileStatusToFileStat status)
 
-scratchRename :: FilePath -> FilePath -> IO Errno
-scratchRename src dest = rename src dest >> getErrno
+scratchRename :: FilePath -> FilePath -> FilePath -> IO Errno
+scratchRename root src dest = rename (root <//> src) (root <//> dest) >> getErrno
 
-scratchSetFileMode :: FilePath -> FileMode -> IO Errno
-scratchSetFileMode path mode = setFileMode path mode >> getErrno
+scratchSetFileMode :: FilePath -> FilePath -> FileMode -> IO Errno
+scratchSetFileMode root s mode = setFileMode (root <//> s) mode >> getErrno
 
-scratchSetOwnerAndGroup :: FilePath -> UserID -> GroupID -> IO Errno
-scratchSetOwnerAndGroup path uid gid = setOwnerAndGroup path uid gid  >> getErrno
+scratchSetOwnerAndGroup :: FilePath -> FilePath -> UserID -> GroupID -> IO Errno
+scratchSetOwnerAndGroup root path uid gid = setOwnerAndGroup (root <//> path) uid gid  >> getErrno
 
-scratchSetFileSize :: FilePath -> FileOffset -> IO Errno
-scratchSetFileSize path off = setFileSize path off >> getErrno
+scratchSetFileSize :: FilePath -> FilePath -> FileOffset -> IO Errno
+scratchSetFileSize root path off = setFileSize (root <//> path) off >> getErrno
 
-scratchSetFileTimes :: FilePath -> EpochTime -> EpochTime -> IO Errno
-scratchSetFileTimes path aTime mTime = setFileTimes path aTime mTime >> getErrno
+scratchSetFileTimes :: FilePath -> FilePath -> EpochTime -> EpochTime -> IO Errno
+scratchSetFileTimes root s aTime mTime = setFileTimes (root <//> s) aTime mTime >> getErrno
 
 scratchOpen :: FilePath -> FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno Fd)
 scratchOpen r p mode flags = liftM Right (openFd (r <//> p) mode (Just stdFileMode) flags)
